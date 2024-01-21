@@ -426,7 +426,7 @@ def _serialize_single(key, _type, _schema, data: object) -> bytes:
     elif isinstance(_type, types.fixed_array):
         # get the length of the fixed array
         obj_length = _type.length
-
+ 
         # loop over the list that we received and add each value to the byte string
         for n in range(obj_length):
             results += _serialize_single(
