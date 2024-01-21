@@ -1,5 +1,6 @@
-import struct   # unpack
-from .types import types, type_groups
+import struct  # unpack
+from .types import types, type_groups, WrappedLayout
+
 
 class schema:
     _inner_dict = None
@@ -17,7 +18,7 @@ class schema:
             schema_class_name = schema_def.__class__.__name__
 
             raise TypeError(
-                'constructor for \'' + str(self_class_name) + '\' requires a dict object as its argument, ' + 
+                'constructor for \'' + str(self_class_name) + '\' requires a dict object as its argument, ' +
                 'received \'' + str(schema_class_name) + '\''
             )
 
@@ -37,6 +38,7 @@ class schema:
             if not schema_def[key] in vars(types).values():
                 # check for a constructible type
                 constructible_types = [
+                    types.WrappedLayout,
                     types.dynamic_array,
                     types.fixed_array,
                     types.hashmap,
@@ -44,17 +46,20 @@ class schema:
                     types.option,
                     types.struct
                 ]
-                if not schema_def[key].__class__ in constructible_types:
+                if not ((schema_def[key].__class__ in constructible_types) or issubclass(schema_def[
+                                                                                             key],
+                                                                                         types.WrappedLayout)):
                     raise TypeError('value \'' + str(schema_def[key]) + '\' is not a valid Borsh type')
 
             # if the key/value pair is valid, insert it
             self._inner_dict[key] = schema_def[key]
-    
+
     def __iter__(self):
         return self._inner_dict.__iter__()
 
     def __next__(self):
         return self._inner_dict.__next__()
+
 
 # deserialize(schema: schema, data: bytes) -> dict
 #
@@ -72,7 +77,6 @@ def deserialize(schema: schema, data: bytes) -> dict:
     # loop over all of the keys in the schema. catch an index error when there
     # is not enough data for the specified schema
     try:
-        key = None
         for key in schema:
             results, position = _deserialize_single(
                 key,
@@ -88,11 +92,13 @@ def deserialize(schema: schema, data: bytes) -> dict:
     # return the deserialized results
     return results
 
+
 # _deserialize_single(key: object, _type: object, data: bytes, position: int, results: dict) -> (dict, int)
 #
 # internal method for deserializing a single Borsh object. not intended to be called by user code; use
 # the deserialize() method instead
-def _deserialize_single(key: object, _schema: schema, _type: object, data: bytes, position: int, results: dict) -> (dict, int):
+def _deserialize_single(key: object, _schema: schema, _type: type, data: bytes, position: int, results: dict) -> (
+        dict, int):
     # determine what data type it is and perform the correct behavior
     # first, check for a uint type
     if _type in type_groups.uint_types:
@@ -137,11 +143,11 @@ def _deserialize_single(key: object, _schema: schema, _type: object, data: bytes
     elif _type in type_groups.float_types:
         # get the number of bytes for this float type
         byte_width = _type - type_groups.float_offset
-        
+
         # put together a buffer of the specified number of bytes
         buffer = b''
         for n in range(byte_width):
-            buffer += data[position : position + 1]
+            buffer += data[position: position + 1]
             position += 1
 
         # unpack the float and add it to the results
@@ -172,7 +178,7 @@ def _deserialize_single(key: object, _schema: schema, _type: object, data: bytes
                 results
             )
             obj_results.append(results[key])
-        
+
         # add the list to the results
         results[key] = obj_results
     # check for a dynamic array
@@ -202,12 +208,12 @@ def _deserialize_single(key: object, _schema: schema, _type: object, data: bytes
                 results
             )
             obj_results.append(results[key])
-        
+
         # add the list to the results
         results[key] = obj_results
     # check for a hashmap
     elif isinstance(_type, types.hashmap):
-         # first, read the u32 size specifier
+        # first, read the u32 size specifier
         byte_width = 4
 
         # get the correct number of bytes, shifting left each time
@@ -277,7 +283,7 @@ def _deserialize_single(key: object, _schema: schema, _type: object, data: bytes
                 results
             )
             set_data.append(ret_data[key])
-        
+
         # convert the data to a set and add it to the results dict
         results[key] = set(set_data)
     # check for string data
@@ -338,16 +344,20 @@ def _deserialize_single(key: object, _schema: schema, _type: object, data: bytes
                 position,
                 temp_results
             )
-            
+
             struct_data[_key] = temp_results[_key]
 
         # add a new struct to the results
         results[key] = types.struct(struct_data)
+    elif issubclass(_schema[key], WrappedLayout):
+        results_, position = _deserialize_single(key, _schema, _schema[key]._inner_type, data, position, results)
+        results[key] = _schema[key]._decode(results_[key])
     else:
         raise NotImplementedError('deserializing \'' + str(key) + '\' not implemented yet')
 
     # return the new result dict and position
     return results, position
+
 
 # serialize(schema: schema, data: dict) -> bytes
 #
@@ -372,6 +382,7 @@ def serialize(schema: schema, data: dict) -> bytes:
     # return the serialized results
     return results
 
+
 # _serialize_single(key: object, _type: object, data: bytes, position: int, results: dict) -> (dict, int)
 #
 # internal method for serializing a single Borsh object. not intended to be called by user code; use
@@ -385,7 +396,7 @@ def _serialize_single(key, _type, _schema, data: object) -> bytes:
     if _type in type_groups.uint_types:
         # determine the byte width of this uint
         byte_width = _type
-        
+
         # convert the value to a byte string
         results = data[key].to_bytes(byte_width, byteorder='little')
     # then, check for a signed int type
@@ -415,7 +426,7 @@ def _serialize_single(key, _type, _schema, data: object) -> bytes:
     elif isinstance(_type, types.fixed_array):
         # get the length of the fixed array
         obj_length = _type.length
-        
+
         # loop over the list that we received and add each value to the byte string
         for n in range(obj_length):
             results += _serialize_single(
@@ -428,7 +439,7 @@ def _serialize_single(key, _type, _schema, data: object) -> bytes:
     elif isinstance(_type, types.dynamic_array):
         # store the length of the array as a u32
         results = len(data[key]).to_bytes(4, byteorder='little')
-        
+
         # loop over the list that we received and add each value to the byte string
         for n in range(len(data[key])):
             results += _serialize_single(
@@ -466,7 +477,7 @@ def _serialize_single(key, _type, _schema, data: object) -> bytes:
 
         # sort the set
         data[key] = sorted(data[key])
-        
+
         # loop over the list that we received and add each int to the byte string
         set_list = list(data[key])
         for n in range(len(data[key])):
@@ -514,6 +525,10 @@ def _serialize_single(key, _type, _schema, data: object) -> bytes:
                 struct_schema,
                 {key: struct_obj.struct_dict[key]}
             )
+    elif issubclass(_schema[key], WrappedLayout):
+        to_serialize = _schema[key]._encode(data[key])
+
+        results += _serialize_single(key, _schema[key]._inner_type, _schema, {key: to_serialize})
     else:
         raise NotImplementedError('serializing \'' + str(_type) + '\' not implemented yet')
 

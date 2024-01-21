@@ -1,5 +1,18 @@
 from enum import auto, Enum, unique
 
+
+class WrappedLayout:
+    _inner_type = None
+
+    @staticmethod
+    def _decode(obj):
+        ...
+
+    @staticmethod
+    def _encode(obj):
+        ...
+
+
 # class _dynamic_array
 #
 # the internal class representing a Borsh dynamic array. not intended to be directly instantiated
@@ -9,6 +22,7 @@ class _dynamic_array:
 
     def __init__(self, _type):
         self.array_type = _type
+
 
 # class _fixed_array
 #
@@ -26,6 +40,7 @@ class _fixed_array:
         self.length = length
         self.array_type = _type
 
+
 # class _hashmap
 #
 # the internal class representing a Borsh hashmap. not intended to be directly instantiated
@@ -36,11 +51,13 @@ class _hashmap:
 
     def __init__(self, hashmap_key_type, hashmap_value_type):
         if not hashmap_key_type in vars(types).values() or not hashmap_value_type in vars(types).values() and \
-            not hashmap_key_type.__class__ in vars(types).values() or not hashmap_value_type.__class__ in vars(types).values():
+                not hashmap_key_type.__class__ in vars(types).values() or not hashmap_value_type.__class__ in vars(
+            types).values():
             raise ValueError('constructor for \'hashmap\' requires two borsh.types object as arguments')
-        
+
         self.hashmap_key_type = hashmap_key_type
         self.hashmap_value_type = hashmap_value_type
+
 
 # class _hashset
 #
@@ -52,8 +69,9 @@ class _hashset:
     def __init__(self, hashset_type):
         if not hashset_type in vars(types).values() and not hashset_type.__class__ in vars(types).values():
             raise ValueError('constructor for \'hashset\' requires a borsh.types object as an argument')
-        
+
         self.hashset_type = hashset_type
+
 
 # class _option
 #
@@ -65,8 +83,9 @@ class _option:
     def __init__(self, option_type):
         if not option_type in vars(types).values() and not option_type.__class__ in vars(types).values():
             raise ValueError('constructor for \'option\' requires a borsh.types object as an argument')
-        
+
         self.option_type = option_type
+
 
 # class _option
 #
@@ -90,6 +109,7 @@ class _struct:
     def __str__(self):
         return self.__repr__()
 
+
 # class types
 #
 # 'types' is essentially a namespace for all of the different Borsh types. it was originally an enum
@@ -98,6 +118,7 @@ class _struct:
 
 float_offset = 30
 signed_int_offset = 20
+
 
 class types:
     # unsigned integer types
@@ -145,6 +166,8 @@ class types:
 
     # string type
     string = auto()
+    WrappedLayout = WrappedLayout
+
 
 # class type_groups
 #
@@ -153,7 +176,7 @@ class types:
 class type_groups:
     float_offset = float_offset
     signed_int_offset = signed_int_offset
-    
+
     float_types = [
         types.f32,
         types.f64
